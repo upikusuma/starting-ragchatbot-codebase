@@ -17,9 +17,33 @@ document.addEventListener('DOMContentLoaded', () => {
     courseTitles = document.getElementById('courseTitles');
     
     setupEventListeners();
+    setupThemeToggle();
     createNewSession();
     loadCourseStats();
 });
+
+// Theme toggle
+function setupThemeToggle() {
+    const root = document.documentElement;
+    const toggle = document.getElementById('themeToggle');
+
+    const currentTheme = () => root.getAttribute('data-theme') || 'dark';
+    const syncLabel = () => {
+        toggle.setAttribute('aria-label',
+            currentTheme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+    };
+    syncLabel();
+
+    toggle.addEventListener('click', () => {
+        const next = currentTheme() === 'dark' ? 'light' : 'dark';
+        // Enable transitions only during the switch
+        root.classList.add('theme-transition');
+        root.setAttribute('data-theme', next);
+        try { localStorage.setItem('theme', next); } catch (e) {}
+        syncLabel();
+        setTimeout(() => root.classList.remove('theme-transition'), 350);
+    });
+}
 
 // Event Listeners
 function setupEventListeners() {
