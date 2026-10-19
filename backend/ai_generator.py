@@ -10,6 +10,7 @@ class AIGenerator:
 
 Search Tool Usage:
 - Use the search tool **only** for questions about specific course content or detailed educational materials
+- Use `get_course_outline` for questions about a course's outline, structure or lesson list; use `search_course_content` (always with a `query`) for questions about what a course teaches
 - **Up to 2 sequential tool calls per query**, each one after you have seen the previous result
 - Make a second call only when it depends on the first result or the first result is insufficient (e.g. get a course outline, then search for the lesson topic it reveals)
 - Never repeat an identical call; after 2 rounds, answer from what you have

@@ -12,7 +12,7 @@ from conftest import (
     chunk_meta,
     make_results,
 )
-from search_tools import CourseSearchTool, ToolManager
+from search_tools import CourseOutlineTool, CourseSearchTool, ToolManager
 
 # ------------------------------------------------------------ unit: mocked store
 
@@ -226,3 +226,33 @@ class TestEnvironment:
         """app.py loads documents from a cwd-relative '../docs' on startup"""
         source = (BACKEND_DIR / "app.py").read_text(encoding="utf-8")
         assert '"../docs"' not in source and "'../docs'" not in source
+
+
+@pytest.mark.integration
+class TestCourseOutlineTool:
+    def test_outline_lists_every_lesson(self, seeded_store):
+        out = CourseOutlineTool(seeded_store).execute(course_name=COURSE_A)
+        assert f"Course: {COURSE_A}" in out
+        for title in ("Welcome", "Embeddings", "Similarity Search"):
+            assert title in out
+
+    def test_partial_course_name_resolves(self, seeded_store):
+        out = CourseOutlineTool(seeded_store).execute(course_name="Vector")
+        assert f"Course: {COURSE_A}" in out
+
+    def test_outline_works_without_a_search_query(self, seeded_store):
+        """Regression: outline questions made the model call search with course_name only, raising TypeError"""
+        manager = ToolManager()
+        manager.register_tool(CourseOutlineTool(seeded_store))
+        out = manager.execute_tool("get_course_outline", course_name=COURSE_A)
+        assert "Lesson 1" in out
+
+
+@pytest.mark.integration
+class TestSearchWithoutQuery:
+    def test_missing_query_falls_back_to_course_and_lesson(self, seeded_store):
+        """Regression: model sent only course_name/lesson_number and execute raised TypeError"""
+        out = CourseSearchTool(seeded_store).execute(
+            course_name="Vector", lesson_number=2
+        )
+        assert out.startswith(f"[{COURSE_A} - Lesson 2")

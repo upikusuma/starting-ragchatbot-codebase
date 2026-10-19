@@ -44,7 +44,10 @@ class TestOrchestration:
         kwargs = rag.ai_generator.generate_response.call_args.kwargs
         assert kwargs["query"] == "What is MCP?"
         assert kwargs["tool_manager"] is rag.tool_manager
-        assert [t["name"] for t in kwargs["tools"]] == ["search_course_content"]
+        assert [t["name"] for t in kwargs["tools"]] == [
+        "search_course_content",
+        "get_course_outline",
+    ]
 
     def test_query_returns_answer_and_sources_from_the_search(self, rag, mock_store):
         rag.ai_generator.generate_response.side_effect = search_then_answer()

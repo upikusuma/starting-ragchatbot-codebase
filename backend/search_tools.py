@@ -51,7 +51,7 @@ class CourseSearchTool(Tool):
 
     def execute(
         self,
-        query: str,
+        query: Optional[str] = None,
         course_name: Optional[str] = None,
         lesson_number: Optional[int] = None,
     ) -> str:
@@ -66,6 +66,10 @@ class CourseSearchTool(Tool):
         Returns:
             Formatted search results or error message
         """
+
+        # Small models often omit the query when a course or lesson is named; search on that instead
+        if not query:
+            query = course_name or f"lesson {lesson_number}"
 
         # Use the vector store's unified search interface
         results = self.store.search(
@@ -121,6 +125,55 @@ class CourseSearchTool(Tool):
         self.last_sources = sources
 
         return "\n\n".join(formatted)
+
+
+class CourseOutlineTool(Tool):
+    """Tool for retrieving a course's title, link and full lesson list"""
+
+    def __init__(self, vector_store: VectorStore):
+        self.store = vector_store
+
+    def get_tool_definition(self) -> Dict[str, Any]:
+        """Return the tool definition for this tool"""
+        return {
+            "name": "get_course_outline",
+            "description": "Get the outline of a course: its title, link and the number and title of every lesson. Use for questions about a course's outline, structure, syllabus or list of lessons",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "course_name": {
+                        "type": "string",
+                        "description": "Course title (partial matches work, e.g. 'MCP', 'Introduction')",
+                    },
+                },
+                "required": ["course_name"],
+            },
+        }
+
+    def execute(self, course_name: str) -> str:
+        """Return the formatted outline for the course best matching course_name"""
+        course_title = self.store._resolve_course_name(course_name)
+        if not course_title:
+            return f"No course found matching '{course_name}'"
+
+        course = next(
+            (
+                c
+                for c in self.store.get_all_courses_metadata()
+                if c.get("title") == course_title
+            ),
+            None,
+        )
+        if not course:
+            return f"No outline found for course '{course_title}'"
+
+        lines = [f"Course: {course_title}"]
+        if course.get("course_link"):
+            lines.append(f"Link: {course['course_link']}")
+        lines.append(f"Lessons ({course.get('lesson_count', 0)}):")
+        for lesson in course.get("lessons", []):
+            lines.append(f"  Lesson {lesson['lesson_number']}: {lesson['lesson_title']}")
+        return "\n".join(lines)
 
 
 class ToolManager:
