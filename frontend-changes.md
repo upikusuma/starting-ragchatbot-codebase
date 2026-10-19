@@ -41,7 +41,6 @@ The test app duplicates the route logic from `backend/app.py`, so route changes 
 
 ## Theme toggle
 
-# Frontend Changes: Dark/Light Theme Toggle
 
 ## index.html
 - Added a fixed top-right icon button (`#themeToggle`) with sun and moon SVGs. It is a native `<button>`, so Tab/Enter/Space work, and `aria-label` updates with the current theme.

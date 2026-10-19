@@ -10,7 +10,9 @@ class AIGenerator:
 
 Search Tool Usage:
 - Use the search tool **only** for questions about specific course content or detailed educational materials
-- **One search per query maximum**
+- **Up to 2 sequential tool calls per query**, each one after you have seen the previous result
+- Make a second call only when it depends on the first result or the first result is insufficient (e.g. get a course outline, then search for the lesson topic it reveals)
+- Never repeat an identical call; after 2 rounds, answer from what you have
 - Synthesize search results into accurate, fact-based responses
 - If search yields no results, state this clearly without offering alternatives
 
@@ -29,6 +31,9 @@ All responses must be:
 4. **Example-supported** - Include relevant examples when they aid understanding
 Provide only the direct answer to what was asked.
 """
+
+    # Sequential tool rounds allowed per user query
+    MAX_TOOL_ROUNDS = 2
 
     def __init__(self, model: str, host: str):
         self.client = ollama.Client(host=host)
@@ -91,38 +96,41 @@ Provide only the direct answer to what was asked.
         if tools:
             chat_params["tools"] = self._to_ollama_tools(tools)
 
-        response = self.client.chat(**chat_params)
+        # Each round is its own request; the model sees earlier results via `messages`
+        for _ in range(self.MAX_TOOL_ROUNDS):
+            response = self.client.chat(**chat_params)
 
-        # Handle tool execution if the model requested it
-        if response.message.tool_calls and tool_manager:
-            return self._handle_tool_execution(response, messages, tool_manager)
+            if not response.message.tool_calls or not tool_manager:
+                return response.message.content
 
-        return response.message.content
+            messages.append(response.message)
+            if not self._execute_tool_calls(
+                response.message.tool_calls, messages, tool_manager
+            ):
+                break
 
-    def _handle_tool_execution(
-        self, initial_response, messages: List[Dict[str, Any]], tool_manager
-    ):
+        # Rounds used up (or a tool failed): final call without tools so the model has to answer
+        chat_params.pop("tools", None)
+        return self.client.chat(**chat_params).message.content
+
+    def _execute_tool_calls(
+        self, tool_calls, messages: List[Dict[str, Any]], tool_manager
+    ) -> bool:
         """
-        Handle execution of tool calls and get follow-up response.
-
-        Args:
-            initial_response: The response containing tool call requests
-            messages: Conversation so far (system + user)
-            tool_manager: Manager to execute tools
+        Run every tool call from one response, appending a tool message per call.
 
         Returns:
-            Final response text after tool execution
+            False if any call raised (the error text is sent to the model), else True
         """
-        messages = messages.copy()
-        messages.append(initial_response.message)
-
-        for call in initial_response.message.tool_calls:
+        succeeded = True
+        for call in tool_calls:
             try:
                 tool_result = tool_manager.execute_tool(
                     call.function.name, **self._clean_arguments(call.function.arguments)
                 )
             except Exception as e:
                 tool_result = f"Tool error: {e}"
+                succeeded = False
 
             messages.append(
                 {
@@ -131,14 +139,7 @@ Provide only the direct answer to what was asked.
                     "content": tool_result,
                 }
             )
-
-        # Final call without tools so the model has to answer
-        final_response = self.client.chat(
-            model=self.model,
-            messages=messages,
-            options=self.options,
-        )
-        return final_response.message.content
+        return succeeded
 
     @staticmethod
     def _clean_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:

@@ -1,4 +1,5 @@
 """API tests for /api/query, /api/courses and /."""
+
 import pytest
 
 
@@ -34,8 +35,11 @@ class TestQueryEndpoint:
         assert client.post("/api/query", json=payload).status_code == 422
 
     def test_non_json_body_returns_422(self, client):
-        res = client.post("/api/query", content="not json",
-                          headers={"Content-Type": "application/json"})
+        res = client.post(
+            "/api/query",
+            content="not json",
+            headers={"Content-Type": "application/json"},
+        )
         assert res.status_code == 422
 
     def test_rag_failure_returns_500(self, client, mock_rag_system):
@@ -59,10 +63,14 @@ class TestCoursesEndpoint:
 
     def test_empty_catalog(self, client, mock_rag_system):
         mock_rag_system.get_course_analytics.return_value = {
-            "total_courses": 0, "course_titles": []}
+            "total_courses": 0,
+            "course_titles": [],
+        }
 
         assert client.get("/api/courses").json() == {
-            "total_courses": 0, "course_titles": []}
+            "total_courses": 0,
+            "course_titles": [],
+        }
 
     def test_failure_returns_500(self, client, mock_rag_system):
         mock_rag_system.get_course_analytics.side_effect = RuntimeError("db down")
