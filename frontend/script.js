@@ -122,10 +122,22 @@ function addMessage(content, type, sources = null, isWelcome = false) {
     let html = `<div class="message-content">${displayContent}</div>`;
     
     if (sources && sources.length > 0) {
+        const linkIcon = '<svg class="source-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+        const itemsHtml = sources.map(source => {
+            const match = /^(.*) - Lesson (\d+)$/.exec(source.text);
+            const title = escapeHtml(match ? match[1] : source.text);
+            const badge = match ? `<span class="source-badge">Lesson ${match[2]}</span>` : '';
+            const inner = `${badge}<span class="source-title">${title}</span>`;
+            if (source.url && /^https?:\/\//i.test(source.url)) {
+                const href = escapeHtml(source.url).replace(/"/g, '&quot;');
+                return `<li><a class="source-item" href="${href}" target="_blank" rel="noopener noreferrer">${inner}${linkIcon}</a></li>`;
+            }
+            return `<li><span class="source-item">${inner}</span></li>`;
+        }).join('');
         html += `
             <details class="sources-collapsible">
-                <summary class="sources-header">Sources</summary>
-                <div class="sources-content">${sources.join(', ')}</div>
+                <summary class="sources-header">Sources (${sources.length})</summary>
+                <ul class="sources-list">${itemsHtml}</ul>
             </details>
         `;
     }

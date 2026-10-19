@@ -1,9 +1,9 @@
-import anthropic
+import ollama
 from typing import List, Optional, Dict, Any
 
 class AIGenerator:
-    """Handles interactions with Anthropic's Claude API for generating responses"""
-    
+    """Handles interactions with a local Ollama model for generating responses"""
+
     # Static system prompt to avoid rebuilding on each call
     SYSTEM_PROMPT = """ You are an AI assistant specialized in course materials and educational content with access to a comprehensive search tool for course information.
 
@@ -28,108 +28,122 @@ All responses must be:
 4. **Example-supported** - Include relevant examples when they aid understanding
 Provide only the direct answer to what was asked.
 """
-    
-    def __init__(self, api_key: str, model: str):
-        self.client = anthropic.Anthropic(api_key=api_key)
+
+    def __init__(self, model: str, host: str):
+        self.client = ollama.Client(host=host)
         self.model = model
-        
-        # Pre-build base API parameters
-        self.base_params = {
-            "model": self.model,
+
+        # Pre-build base chat options
+        self.options = {
             "temperature": 0,
-            "max_tokens": 800
+            "num_predict": 800,
+            "num_ctx": 8192
         }
-    
+
+    @staticmethod
+    def _to_ollama_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert tool definitions (input_schema style) to Ollama's function format"""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["input_schema"],
+                },
+            }
+            for tool in tools
+        ]
+
     def generate_response(self, query: str,
                          conversation_history: Optional[str] = None,
                          tools: Optional[List] = None,
                          tool_manager=None) -> str:
         """
         Generate AI response with optional tool usage and conversation context.
-        
+
         Args:
             query: The user's question or request
             conversation_history: Previous messages for context
             tools: Available tools the AI can use
             tool_manager: Manager to execute tools
-            
+
         Returns:
             Generated response as string
         """
-        
-        # Build system content efficiently - avoid string ops when possible
+
         system_content = (
             f"{self.SYSTEM_PROMPT}\n\nPrevious conversation:\n{conversation_history}"
-            if conversation_history 
+            if conversation_history
             else self.SYSTEM_PROMPT
         )
-        
-        # Prepare API call parameters efficiently
-        api_params = {
-            **self.base_params,
-            "messages": [{"role": "user", "content": query}],
-            "system": system_content
+
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": query},
+        ]
+
+        chat_params = {
+            "model": self.model,
+            "messages": messages,
+            "options": self.options,
         }
-        
-        # Add tools if available
         if tools:
-            api_params["tools"] = tools
-            api_params["tool_choice"] = {"type": "auto"}
-        
-        # Get response from Claude
-        response = self.client.messages.create(**api_params)
-        
-        # Handle tool execution if needed
-        if response.stop_reason == "tool_use" and tool_manager:
-            return self._handle_tool_execution(response, api_params, tool_manager)
-        
-        # Return direct response
-        return response.content[0].text
-    
-    def _handle_tool_execution(self, initial_response, base_params: Dict[str, Any], tool_manager):
+            chat_params["tools"] = self._to_ollama_tools(tools)
+
+        response = self.client.chat(**chat_params)
+
+        # Handle tool execution if the model requested it
+        if response.message.tool_calls and tool_manager:
+            return self._handle_tool_execution(response, messages, tool_manager)
+
+        return response.message.content
+
+    def _handle_tool_execution(self, initial_response, messages: List[Dict[str, Any]], tool_manager):
         """
         Handle execution of tool calls and get follow-up response.
-        
+
         Args:
-            initial_response: The response containing tool use requests
-            base_params: Base API parameters
+            initial_response: The response containing tool call requests
+            messages: Conversation so far (system + user)
             tool_manager: Manager to execute tools
-            
+
         Returns:
             Final response text after tool execution
         """
-        # Start with existing messages
-        messages = base_params["messages"].copy()
-        
-        # Add AI's tool use response
-        messages.append({"role": "assistant", "content": initial_response.content})
-        
-        # Execute all tool calls and collect results
-        tool_results = []
-        for content_block in initial_response.content:
-            if content_block.type == "tool_use":
+        messages = messages.copy()
+        messages.append(initial_response.message)
+
+        for call in initial_response.message.tool_calls:
+            try:
                 tool_result = tool_manager.execute_tool(
-                    content_block.name, 
-                    **content_block.input
+                    call.function.name,
+                    **self._clean_arguments(call.function.arguments)
                 )
-                
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": content_block.id,
-                    "content": tool_result
-                })
-        
-        # Add tool results as single message
-        if tool_results:
-            messages.append({"role": "user", "content": tool_results})
-        
-        # Prepare final API call without tools
-        final_params = {
-            **self.base_params,
-            "messages": messages,
-            "system": base_params["system"]
-        }
-        
-        # Get final response
-        final_response = self.client.messages.create(**final_params)
-        return final_response.content[0].text
+            except Exception as e:
+                tool_result = f"Tool error: {e}"
+
+            messages.append({
+                "role": "tool",
+                "tool_name": call.function.name,
+                "content": tool_result,
+            })
+
+        # Final call without tools so the model has to answer
+        final_response = self.client.chat(
+            model=self.model,
+            messages=messages,
+            options=self.options,
+        )
+        return final_response.message.content
+
+    @staticmethod
+    def _clean_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Drop empty values and coerce lesson_number, since small models often send strings"""
+        cleaned = {k: v for k, v in dict(arguments).items() if v not in (None, "", "null")}
+        if "lesson_number" in cleaned:
+            try:
+                cleaned["lesson_number"] = int(cleaned["lesson_number"])
+            except (TypeError, ValueError):
+                del cleaned["lesson_number"]
+        return cleaned

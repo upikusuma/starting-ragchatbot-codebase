@@ -4,14 +4,14 @@ A Retrieval-Augmented Generation (RAG) system designed to answer questions about
 
 ## Overview
 
-This application is a full-stack web application that enables users to query course materials and receive intelligent, context-aware responses. It uses ChromaDB for vector storage, Anthropic's Claude for AI generation, and provides a web interface for interaction.
+This application is a full-stack web application that enables users to query course materials and receive intelligent, context-aware responses. It uses ChromaDB for vector storage, a local Ollama model for AI generation, and provides a web interface for interaction.
 
 
 ## Prerequisites
 
 - Python 3.13 or higher
 - uv (Python package manager)
-- An Anthropic API key (for Claude AI)
+- [Ollama](https://ollama.com) running locally with a tool-capable model: `ollama pull qwen2.5:7b`
 - **For Windows**: Use Git Bash to run the application commands - [Download Git for Windows](https://git-scm.com/downloads/win)
 
 ## Installation
@@ -26,11 +26,12 @@ This application is a full-stack web application that enables users to query cou
    uv sync
    ```
 
-3. **Set up environment variables**
+3. **Optional: choose the model**
    
-   Create a `.env` file in the root directory:
+   The default is `qwen2.5:7b` on `http://localhost:11434`. To change it, create a `.env` file in the root directory:
    ```bash
-   ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   OLLAMA_MODEL=qwen2.5:7b
+   OLLAMA_HOST=http://localhost:11434
    ```
 
 ## Running the Application
