@@ -591,7 +591,10 @@ a.source-item:hover .source-icon {
 
 /* Sidebar Headers */
 .stats-header,
-.suggested-header {
+.suggested-header,
+.new-chat-button {
+    font-family: inherit;
+    text-align: left;
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-secondary);
@@ -607,13 +610,21 @@ a.source-item:hover .source-icon {
 }
 
 .stats-header:focus,
-.suggested-header:focus {
+.suggested-header:focus,
+.new-chat-button:focus-visible {
     color: var(--primary-color);
 }
 
 .stats-header:hover,
-.suggested-header:hover {
+.suggested-header:hover,
+.new-chat-button:hover {
     color: var(--primary-color);
+}
+
+.new-chat-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: var(--text-secondary);
 }
 
 .stats-header::-webkit-details-marker,
