@@ -1,6 +1,7 @@
 import ollama
 from typing import List, Optional, Dict, Any
 
+
 class AIGenerator:
     """Handles interactions with a local Ollama model for generating responses"""
 
@@ -34,11 +35,7 @@ Provide only the direct answer to what was asked.
         self.model = model
 
         # Pre-build base chat options
-        self.options = {
-            "temperature": 0,
-            "num_predict": 800,
-            "num_ctx": 8192
-        }
+        self.options = {"temperature": 0, "num_predict": 800, "num_ctx": 8192}
 
     @staticmethod
     def _to_ollama_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -55,10 +52,13 @@ Provide only the direct answer to what was asked.
             for tool in tools
         ]
 
-    def generate_response(self, query: str,
-                         conversation_history: Optional[str] = None,
-                         tools: Optional[List] = None,
-                         tool_manager=None) -> str:
+    def generate_response(
+        self,
+        query: str,
+        conversation_history: Optional[str] = None,
+        tools: Optional[List] = None,
+        tool_manager=None,
+    ) -> str:
         """
         Generate AI response with optional tool usage and conversation context.
 
@@ -99,7 +99,9 @@ Provide only the direct answer to what was asked.
 
         return response.message.content
 
-    def _handle_tool_execution(self, initial_response, messages: List[Dict[str, Any]], tool_manager):
+    def _handle_tool_execution(
+        self, initial_response, messages: List[Dict[str, Any]], tool_manager
+    ):
         """
         Handle execution of tool calls and get follow-up response.
 
@@ -117,17 +119,18 @@ Provide only the direct answer to what was asked.
         for call in initial_response.message.tool_calls:
             try:
                 tool_result = tool_manager.execute_tool(
-                    call.function.name,
-                    **self._clean_arguments(call.function.arguments)
+                    call.function.name, **self._clean_arguments(call.function.arguments)
                 )
             except Exception as e:
                 tool_result = f"Tool error: {e}"
 
-            messages.append({
-                "role": "tool",
-                "tool_name": call.function.name,
-                "content": tool_result,
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_name": call.function.name,
+                    "content": tool_result,
+                }
+            )
 
         # Final call without tools so the model has to answer
         final_response = self.client.chat(
@@ -140,7 +143,9 @@ Provide only the direct answer to what was asked.
     @staticmethod
     def _clean_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Drop empty values and coerce lesson_number, since small models often send strings"""
-        cleaned = {k: v for k, v in dict(arguments).items() if v not in (None, "", "null")}
+        cleaned = {
+            k: v for k, v in dict(arguments).items() if v not in (None, "", "null")
+        }
         if "lesson_number" in cleaned:
             try:
                 cleaned["lesson_number"] = int(cleaned["lesson_number"])
