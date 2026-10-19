@@ -22,6 +22,90 @@
     --focus-ring: rgba(37, 99, 235, 0.2);
     --welcome-bg: #1e3a5f;
     --welcome-border: #2563eb;
+    --code-bg: rgba(0, 0, 0, 0.2);
+    --error-text: #f87171;
+    --success-text: #4ade80;
+    --user-message-text: #ffffff;
+}
+
+/* Light theme */
+:root[data-theme="light"] {
+    --primary-color: #2563eb;
+    --primary-hover: #1d4ed8;
+    --background: #f8fafc;
+    --surface: #ffffff;
+    --surface-hover: #e2e8f0;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --border-color: #cbd5e1;
+    --user-message: #2563eb;
+    --assistant-message: #e2e8f0;
+    --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.1);
+    --focus-ring: rgba(37, 99, 235, 0.3);
+    --welcome-bg: #dbeafe;
+    --welcome-border: #2563eb;
+    --code-bg: rgba(15, 23, 42, 0.07);
+    --error-text: #b91c1c;
+    --success-text: #15803d;
+}
+
+/* Smooth theme switch (class is added only while toggling) */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease !important;
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 100;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.theme-toggle:hover {
+    border-color: var(--primary-color);
+    transform: scale(1.08);
+}
+
+.theme-toggle:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.theme-toggle svg {
+    position: absolute;
+    transition: transform 0.4s ease, opacity 0.3s ease;
+}
+
+/* Dark theme shows the sun (switch to light); light theme shows the moon */
+.theme-toggle .icon-moon {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.5);
+}
+
+:root[data-theme="light"] .theme-toggle .icon-sun {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.5);
+}
+
+:root[data-theme="light"] .theme-toggle .icon-moon {
+    opacity: 1;
+    transform: rotate(0) scale(1);
 }
 
 /* Base Styles */
@@ -337,7 +421,7 @@ a.source-item:hover .source-icon {
 }
 
 .message-content code {
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--code-bg);
     padding: 0.125rem 0.25rem;
     border-radius: 3px;
     font-family: 'Fira Code', 'Consolas', monospace;
@@ -345,7 +429,7 @@ a.source-item:hover .source-icon {
 }
 
 .message-content pre {
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--code-bg);
     padding: 0.75rem;
     border-radius: 4px;
     overflow-x: auto;
@@ -368,7 +452,7 @@ a.source-item:hover .source-icon {
 .message.welcome-message .message-content {
     background: var(--surface);
     border: 2px solid var(--border-color);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow);
     position: relative;
 }
 
@@ -488,7 +572,7 @@ a.source-item:hover .source-icon {
 /* Error Message */
 .error-message {
     background: rgba(239, 68, 68, 0.1);
-    color: #f87171;
+    color: var(--error-text);
     padding: 0.75rem 1.25rem;
     border-radius: 8px;
     border: 1px solid rgba(239, 68, 68, 0.2);
@@ -498,7 +582,7 @@ a.source-item:hover .source-icon {
 /* Success Message */
 .success-message {
     background: rgba(34, 197, 94, 0.1);
-    color: #4ade80;
+    color: var(--success-text);
     padding: 0.75rem 1.25rem;
     border-radius: 8px;
     border: 1px solid rgba(34, 197, 94, 0.2);
