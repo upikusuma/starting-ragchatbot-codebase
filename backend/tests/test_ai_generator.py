@@ -61,6 +61,11 @@ class TestRequest:
         prompt = AIGenerator.SYSTEM_PROMPT.lower()
         assert "search" in prompt and "course" in prompt
 
+    def test_system_prompt_allows_sequential_tool_calls(self):
+        prompt = AIGenerator.SYSTEM_PROMPT.lower()
+        assert "one search per query" not in prompt
+        assert "2 sequential" in prompt
+
 
 # ------------------------------------------------------------ unit: tool-call handling
 
@@ -110,7 +115,7 @@ class TestToolCalls:
         generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager)
         manager.execute_tool.assert_called_once_with("search_course_content", query="x")
 
-    def test_tool_result_is_sent_back_and_final_request_has_no_tools(self):
+    def test_tool_result_is_sent_back_and_answer_returned(self):
         call = tool_call("search_course_content", query="x")
         generator = make_generator([reply("", [call]), reply("final answer")])
         manager = MagicMock()
@@ -118,9 +123,8 @@ class TestToolCalls:
         answer = generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager)
 
         assert answer == "final answer"
-        final_request = generator.client.calls[1]
-        assert "tools" not in final_request
-        assert final_request["messages"][-1] == {
+        assert len(generator.client.calls) == 2
+        assert generator.client.calls[1]["messages"][-1] == {
             "role": "tool", "tool_name": "search_course_content", "content": "RESULT TEXT",
         }
 
@@ -138,6 +142,122 @@ class TestToolCalls:
         manager = MagicMock()
         generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager)
         assert manager.execute_tool.call_count == 2
+
+
+# ------------------------------------------------------------ sequential tool rounds
+
+OUTLINE_DEF = {
+    "name": "get_course_outline",
+    "description": "Get a course outline",
+    "input_schema": {"type": "object", "properties": {"course_name": {"type": "string"}}, "required": ["course_name"]},
+}
+
+
+def tool_contents(request):
+    return [m["content"] for m in request["messages"] if isinstance(m, dict) and m.get("role") == "tool"]
+
+
+class TestSequentialRounds:
+    def outline_then_search(self):
+        return [
+            reply("", [tool_call("get_course_outline", course_name="X")]),
+            reply("", [tool_call("search_course_content", query="Embeddings")]),
+            reply("final answer"),
+        ]
+
+    def test_two_rounds_are_separate_requests_executed_in_order(self):
+        generator = make_generator(self.outline_then_search())
+        manager = MagicMock()
+        manager.execute_tool.side_effect = ["Lesson 4: Embeddings", "Course B covers embeddings"]
+
+        answer = generator.generate_response("q", tools=[SEARCH_DEF, OUTLINE_DEF], tool_manager=manager)
+
+        assert answer == "final answer"
+        assert len(generator.client.calls) == 3
+        assert [c.args[0] for c in manager.execute_tool.call_args_list] == [
+            "get_course_outline", "search_course_content",
+        ]
+        manager.execute_tool.assert_any_call("search_course_content", query="Embeddings")
+
+    def test_tools_are_offered_on_both_rounds_but_not_on_the_final_call(self):
+        generator = make_generator(self.outline_then_search())
+        generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=MagicMock())
+        calls = generator.client.calls
+        assert "tools" in calls[0] and "tools" in calls[1]
+        assert "tools" not in calls[2]
+
+    def test_later_requests_carry_earlier_results_in_order(self):
+        generator = make_generator(self.outline_then_search())
+        manager = MagicMock()
+        manager.execute_tool.side_effect = ["OUTLINE", "SEARCH"]
+        generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager)
+
+        calls = generator.client.calls
+        assert tool_contents(calls[1]) == ["OUTLINE"]
+        assert tool_contents(calls[2]) == ["OUTLINE", "SEARCH"]
+        assert calls[2]["messages"][1] == {"role": "user", "content": "q"}
+
+    def test_model_answering_after_one_round_stops_there(self):
+        call = tool_call("search_course_content", query="x")
+        generator = make_generator([reply("", [call]), reply("done")])
+        manager = MagicMock()
+
+        assert generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager) == "done"
+        assert len(generator.client.calls) == 2
+        assert "tools" in generator.client.calls[1]
+        manager.execute_tool.assert_called_once()
+
+    def test_a_third_round_is_never_executed(self):
+        def call():
+            return reply("", [tool_call("search_course_content", query="again")])
+
+        generator = make_generator([call(), call(), call()])  # final reply still asks for a tool
+        manager = MagicMock()
+
+        generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager)
+
+        assert len(generator.client.calls) == 3
+        assert manager.execute_tool.call_count == 2
+        assert "tools" not in generator.client.calls[2]
+
+    def test_parallel_calls_in_one_round_count_as_one_round(self):
+        calls = [tool_call("search_course_content", query="a"), tool_call("search_course_content", query="b")]
+        generator = make_generator([
+            reply("", calls),
+            reply("", [tool_call("search_course_content", query="c")]),
+            reply("final"),
+        ])
+        manager = MagicMock()
+
+        generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager)
+
+        assert manager.execute_tool.call_count == 3
+        assert len(generator.client.calls) == 3
+
+    def test_failure_in_first_round_skips_round_two_and_answers_without_tools(self):
+        call = tool_call("search_course_content", query="x")
+        generator = make_generator([reply("", [call]), reply("sorry, search failed")])
+        manager = MagicMock()
+        manager.execute_tool.side_effect = RuntimeError("db down")
+
+        answer = generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager)
+
+        assert answer == "sorry, search failed"
+        assert len(generator.client.calls) == 2
+        assert "tools" not in generator.client.calls[1]
+        assert tool_contents(generator.client.calls[1]) == ["Tool error: db down"]
+
+    def test_failure_in_second_round_keeps_first_result_and_stops(self):
+        generator = make_generator(self.outline_then_search())
+        manager = MagicMock()
+        manager.execute_tool.side_effect = ["OUTLINE", RuntimeError("db down")]
+
+        answer = generator.generate_response("q", tools=[SEARCH_DEF], tool_manager=manager)
+
+        assert answer == "final answer"
+        assert len(generator.client.calls) == 3
+        assert "tools" not in generator.client.calls[2]
+        assert tool_contents(generator.client.calls[2]) == ["OUTLINE", "Tool error: db down"]
 
 
 # ------------------------------------------------------------ wiring: generator -> real ToolManager -> CourseSearchTool
@@ -165,6 +285,19 @@ class TestGeneratorToSearchTool:
         generator.generate_response("q", tools=manager.get_tool_definitions(), tool_manager=manager)
 
         assert generator.client.calls[1]["messages"][-1]["content"] == "No relevant content found."
+
+    def test_two_searches_in_sequence_both_reach_the_vector_store(self, mock_store):
+        manager = ToolManager()
+        manager.register_tool(CourseSearchTool(mock_store))
+        generator = make_generator([
+            reply("", [tool_call("search_course_content", query="first")]),
+            reply("", [tool_call("search_course_content", query="second", course_name="Vector")]),
+            reply("final"),
+        ])
+
+        generator.generate_response("q", tools=manager.get_tool_definitions(), tool_manager=manager)
+
+        assert [c.kwargs["query"] for c in mock_store.search.call_args_list] == ["first", "second"]
 
     def test_invented_parameter_name_does_not_crash_the_request(self, mock_store):
         manager = ToolManager()
