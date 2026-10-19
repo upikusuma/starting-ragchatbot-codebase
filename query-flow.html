@@ -1,0 +1,339 @@
+<title>RAG Query Trace</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: path switcher on top, lane diagram in the middle, sticky step detail at the bottom */
+:root {
+  --bg: #f3f6f7;
+  --surface: #ffffff;
+  --fg: #14212b;
+  --muted: #5a6b77;
+  --line: #cdd7dd;
+  --accent: #0b7a75;
+  --claude: #a85a05;
+  --err: #b3261e;
+  --tint: #e3f1f0;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1a21; --surface: #15242d; --fg: #e4edf2; --muted: #92a4b0;
+    --line: #2b3e4a; --accent: #3fc1b8; --claude: #f0a04b; --err: #ff8a80; --tint: #173438;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1a21; --surface: #15242d; --fg: #e4edf2; --muted: #92a4b0;
+  --line: #2b3e4a; --accent: #3fc1b8; --claude: #f0a04b; --err: #ff8a80; --tint: #173438;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-block: 28px 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 980px; margin: 0 auto; }
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 6px; text-wrap: balance; font-weight: 600; }
+.lede { margin: 0 0 22px; color: var(--muted); max-width: 62ch; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+
+.paths { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.paths button {
+  font: inherit; font-size: 14px; color: var(--fg); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; cursor: pointer;
+}
+.paths button[aria-pressed="true"] { border-color: var(--accent); background: var(--tint); font-weight: 600; }
+.paths button:focus-visible, .row:focus-visible, .nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.summary { display: flex; flex-wrap: wrap; gap: 8px 28px; align-items: baseline; padding: 12px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+.summary p { margin: 0; color: var(--muted); flex: 1 1 280px; }
+.stat { font-family: var(--font-mono); font-size: 13px; }
+.stat b { font-size: 20px; font-weight: 500; color: var(--fg); margin-right: 4px; font-variant-numeric: tabular-nums; }
+
+.scroller { overflow-x: auto; padding-bottom: 8px; }
+.diagram { min-width: 700px; }
+.lanes { display: grid; grid-template-columns: 30px repeat(5, 1fr); gap: 0; position: sticky; top: 0; background: var(--bg); z-index: 2; padding-bottom: 6px; }
+.lane-head { text-align: center; padding: 8px 4px; }
+.lane-head strong { display: block; font-size: 13px; font-weight: 600; }
+.lane-head span { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.lane-head.claude strong { color: var(--claude); }
+
+.row {
+  display: grid; grid-template-columns: 30px 1fr; width: 100%; text-align: left;
+  font: inherit; color: inherit; background: transparent; border: 0; border-left: 3px solid transparent;
+  padding: 0; cursor: pointer;
+}
+.row:hover { background: color-mix(in srgb, var(--tint) 55%, transparent); }
+.row[aria-current="true"] { background: var(--tint); border-left-color: var(--accent); }
+.num { font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding: 12px 0 0 6px; font-variant-numeric: tabular-nums; }
+.track {
+  position: relative; padding: 8px 0 12px;
+  background-image: repeating-linear-gradient(90deg,
+    transparent 0, transparent calc(10% - .5px),
+    var(--line) calc(10% - .5px), var(--line) calc(10% + .5px),
+    transparent calc(10% + .5px), transparent 20%);
+}
+.label { font-size: 12.5px; line-height: 1.35; text-align: center; padding: 0 8px; margin-bottom: 6px; min-height: 17px; }
+.label.pill { background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; margin: 2px 0 0; }
+.arrow { position: relative; height: 2px; background: var(--accent); margin-top: 4px; }
+.arrow::after { content: ""; position: absolute; top: -4px; border: 5px solid transparent; }
+.arrow.ltr::after { right: -2px; border-left: 8px solid var(--accent); border-right: 0; }
+.arrow.rtl::after { left: -2px; border-right: 8px solid var(--accent); border-left: 0; }
+.row.claude .arrow { background: var(--claude); }
+.row.claude .arrow.ltr::after { border-left-color: var(--claude); }
+.row.claude .arrow.rtl::after { border-right-color: var(--claude); }
+.row.error .arrow { background: var(--err); }
+.row.error .arrow.ltr::after { border-left-color: var(--err); }
+.row.error .arrow.rtl::after { border-right-color: var(--err); }
+.row.error .label.pill { border-color: var(--err); }
+.row.claude .label.pill { border-color: var(--claude); }
+
+.detail {
+  position: sticky; bottom: 0; z-index: 3; margin-top: 18px;
+  background: var(--surface); border: 1px solid var(--line); border-bottom: 0;
+  border-radius: 8px 8px 0 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -6px 18px color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.detail-top { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+.detail h2 { font-size: 1rem; margin: 0; font-weight: 600; min-width: 0; }
+.where { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); }
+.detail p { margin: 6px 0 0; max-width: 72ch; }
+.detail pre {
+  margin: 10px 0 0; padding: 10px 12px; overflow-x: auto; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5;
+}
+.nav { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+.nav button {
+  font: inherit; font-size: 13px; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer;
+}
+.nav button:disabled { opacity: .4; cursor: default; }
+.nav .pos { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.hint { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
+@media (prefers-reduced-motion: no-preference) { .row { transition: background .12s; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">starting-ragchatbot-codebase</p>
+  <h1>How one chat message travels through the app</h1>
+  <p class="lede">Pick a question type, then step through the trace. Each row names the file and line that does the work.</p>
+
+  <div class="paths" id="paths" role="group" aria-label="Question type"></div>
+
+  <div class="summary">
+    <p id="pathDesc"></p>
+    <span class="stat"><b id="statClaude">0</b>Claude calls</span>
+    <span class="stat"><b id="statVector">0</b>vector queries</span>
+    <span class="stat"><b id="statSteps">0</b>steps</span>
+  </div>
+
+  <div class="scroller">
+    <div class="diagram">
+      <div class="lanes" aria-hidden="true">
+        <span></span>
+        <div class="lane-head"><strong>Browser</strong><span>script.js</span></div>
+        <div class="lane-head"><strong>FastAPI</strong><span>app.py</span></div>
+        <div class="lane-head"><strong>RAGSystem</strong><span>rag_system.py</span></div>
+        <div class="lane-head claude"><strong>Claude API</strong><span>ai_generator.py</span></div>
+        <div class="lane-head"><strong>VectorStore</strong><span>ChromaDB</span></div>
+      </div>
+      <div id="rows"></div>
+    </div>
+  </div>
+
+  <div class="detail" id="detail" aria-live="polite">
+    <div class="detail-top"><h2 id="dTitle"></h2><span class="where" id="dWhere"></span></div>
+    <p id="dBody"></p>
+    <pre id="dData"></pre>
+    <div class="nav">
+      <button type="button" id="prev">Previous</button>
+      <button type="button" id="next">Next</button>
+      <span class="pos" id="pos"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+var LANES = { browser: 0, api: 1, rag: 2, claude: 3, vector: 4 };
+var ALL = ["general", "course", "named", "error"];
+var COURSE = ["course", "named"];
+
+var PATHS = {
+  general: { name: "General question", desc: "Claude decides no course lookup is needed and answers from its own knowledge.", claude: "1", vector: "0" },
+  course: { name: "Course question", desc: "Claude calls the search tool without a course name, so the query runs across every course.", claude: "2", vector: "1" },
+  named: { name: "Course named", desc: "Claude passes a course name such as \"MCP\". The app first resolves it to a real title, which adds one vector query.", claude: "2", vector: "2" },
+  error: { name: "API call fails", desc: "No ANTHROPIC_API_KEY is set, so Claude call 1 raises. This is how the app behaves right now.", claude: "1 (fails)", vector: "0" }
+};
+
+var STEPS = [
+  { from: "browser", to: "browser", paths: ALL, label: "User sends message", where: "frontend/script.js:46-60",
+    body: "Enter, the send button, or a suggested question calls sendMessage(). Empty input stops here. Otherwise the input locks, the user bubble renders, and a loading animation shows.",
+    data: "chatInput.value.trim()  ->  query" },
+  { from: "browser", to: "api", paths: ALL, label: "POST /api/query", where: "frontend/script.js:63-72",
+    body: "The session id is null on the first message and reused afterwards.",
+    data: "{ \"query\": \"What is MCP?\", \"session_id\": null }" },
+  { from: "api", to: "api", paths: ALL, label: "Create session if missing", where: "backend/app.py:61-63",
+    body: "Session ids are simple counters held in server memory. A restart wipes them.",
+    data: "session_id = \"session_1\"" },
+  { from: "api", to: "rag", paths: ALL, label: "rag_system.query()", where: "backend/app.py:66",
+    body: "The endpoint hands the question and session id to the orchestrator.", data: "query(query, session_id)" },
+  { from: "rag", to: "rag", paths: ALL, label: "Wrap prompt, load history", where: "backend/rag_system.py:114-119",
+    body: "The question gets a fixed prefix. History is the last two exchanges, flattened to plain text.",
+    data: "\"Answer this question about course materials: {query}\"\n\nUser: ...\nAssistant: ..." },
+  { from: "rag", to: "claude", paths: ALL, label: "Claude call 1", where: "backend/ai_generator.py:61-80", kind: "claude",
+    body: "System prompt plus history, the wrapped question, and one tool definition. tool_choice is auto, so Claude decides whether to search. Temperature 0, max 800 tokens.",
+    data: "tools: [search_course_content]\ntool_choice: { type: \"auto\" }" },
+
+  { from: "claude", to: "rag", paths: ["general"], label: "Text answer, no tool used", where: "backend/ai_generator.py:87",
+    body: "stop_reason is not tool_use, so the text returns straight away. The tool never runs and no sources exist.",
+    data: "response.content[0].text" },
+
+  { from: "claude", to: "rag", paths: ["course"], label: "tool_use: search_course_content", where: "backend/ai_generator.py:83",
+    body: "Claude asks for a search. It supplies the search text only, so the query covers all courses.",
+    data: "{ \"query\": \"how does prompt caching work\" }" },
+  { from: "claude", to: "rag", paths: ["named"], label: "tool_use: search_course_content", where: "backend/ai_generator.py:83",
+    body: "Claude asks for a search and names a course, plus a lesson when the question mentions one.",
+    data: "{ \"query\": \"what is a resource\",\n  \"course_name\": \"MCP\",\n  \"lesson_number\": 2 }" },
+  { from: "rag", to: "vector", paths: COURSE, label: "store.search()", where: "backend/search_tools.py:52-70",
+    body: "ToolManager routes the call to CourseSearchTool, which calls the vector store.", data: "search(query, course_name, lesson_number)" },
+  { from: "vector", to: "vector", paths: ["named"], label: "Resolve course name", where: "backend/vector_store.py:102-116", kind: "vector",
+    body: "A one-result similarity query on the course_catalog collection turns \"MCP\" into a full title. There is no similarity threshold, so any text resolves to some course.",
+    data: "course_catalog.query([\"MCP\"], n_results=1)" },
+  { from: "vector", to: "vector", paths: COURSE, label: "Filter, then top 5 chunks", where: "backend/vector_store.py:86-97", kind: "vector",
+    body: "A filter on course title and lesson number is built when either is present. The course_content collection returns the five nearest chunks.",
+    data: "where: { \"$and\": [ {course_title}, {lesson_number} ] }\nn_results: 5" },
+  { from: "vector", to: "rag", paths: COURSE, label: "Formatted chunks + sources", where: "backend/search_tools.py:88-114",
+    body: "Each chunk gets a header. The same labels are stored on the tool as last_sources for the UI. Duplicates are not removed.",
+    data: "[MCP: Build Rich-Context AI Apps - Lesson 2]\n<chunk text>" },
+  { from: "rag", to: "claude", paths: COURSE, label: "Claude call 2 (no tools)", where: "backend/ai_generator.py:122-135", kind: "claude",
+    body: "The tool result goes back as a user message. Tools are left out, so Claude has to write the answer.",
+    data: "messages: [user, assistant(tool_use), user(tool_result)]" },
+  { from: "claude", to: "rag", paths: COURSE, label: "Final answer", where: "backend/ai_generator.py:135",
+    body: "Claude writes a short answer from the retrieved chunks.", data: "final_response.content[0].text" },
+
+  { from: "rag", to: "rag", paths: ["general", "course", "named"], label: "Save exchange, read sources", where: "backend/rag_system.py:129-137",
+    body: "Sources are read from the tool and reset. The question and answer are saved to the session, trimmed to the last two exchanges.",
+    data: "sessions[session_id] += [user, assistant]" },
+  { from: "rag", to: "api", paths: ["general", "course", "named"], label: "(answer, sources)", where: "backend/rag_system.py:140",
+    body: "The orchestrator returns a tuple to the endpoint.", data: "return response, sources" },
+  { from: "api", to: "browser", paths: ["general", "course", "named"], label: "200 JSON response", where: "backend/app.py:68-72",
+    body: "The browser stores the session id on the first reply so follow-up questions share history.",
+    data: "{ \"answer\": \"...\", \"sources\": [\"Course - Lesson 2\"], \"session_id\": \"session_1\" }" },
+  { from: "browser", to: "browser", paths: ["general", "course", "named"], label: "Render answer + Sources", where: "frontend/script.js:83-85, 113-133",
+    body: "The answer renders as markdown. Sources appear in a collapsed block when the list is not empty.",
+    data: "addMessage(data.answer, \"assistant\", data.sources)" },
+
+  { from: "claude", to: "rag", paths: ["error"], label: "AuthenticationError", kind: "error", where: "backend/ai_generator.py:80",
+    body: "With no key, the Anthropic client cannot pick an auth method and raises during the first call. Nothing catches it in AIGenerator or RAGSystem.",
+    data: "Could not resolve authentication method. Expected either api_key or auth_token to be set." },
+  { from: "api", to: "api", paths: ["error"], label: "except Exception", kind: "error", where: "backend/app.py:73-74",
+    body: "The endpoint turns any error into an HTTP 500. The session exists but the exchange is never saved.",
+    data: "raise HTTPException(status_code=500, detail=str(e))" },
+  { from: "api", to: "browser", paths: ["error"], label: "500 { detail }", kind: "error", where: "backend/app.py:74",
+    body: "The browser receives the real error text in the body.", data: "{ \"detail\": \"Could not resolve authentication method...\" }" },
+  { from: "browser", to: "browser", paths: ["error"], label: "Shows \"Error: Query failed\"", kind: "error", where: "frontend/script.js:74, 87-90",
+    body: "script.js throws a fixed message when response.ok is false and never reads the body. The user cannot see what went wrong.",
+    data: "if (!response.ok) throw new Error('Query failed');" }
+];
+
+var state = { path: "course", sel: 0 };
+var $ = function (id) { return document.getElementById(id); };
+
+function visible() { return STEPS.filter(function (s) { return s.paths.indexOf(state.path) !== -1; }); }
+
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function renderPaths() {
+  var box = $("paths");
+  box.textContent = "";
+  Object.keys(PATHS).forEach(function (k) {
+    var b = el("button", null, PATHS[k].name);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(k === state.path));
+    b.addEventListener("click", function () { state.path = k; state.sel = 0; render(); });
+    box.appendChild(b);
+  });
+}
+
+function renderRows() {
+  var rows = $("rows");
+  rows.textContent = "";
+  visible().forEach(function (s, i) {
+    var a = LANES[s.from], b = LANES[s.to];
+    var row = el("button", "row" + (s.kind === "claude" ? " claude" : "") + (s.kind === "error" ? " error" : ""));
+    row.type = "button";
+    if (i === state.sel) row.setAttribute("aria-current", "true");
+    row.appendChild(el("span", "num", String(i + 1)));
+    var track = el("div", "track");
+    var label, arrow;
+    if (a === b) {
+      label = el("div", "label pill", s.label);
+      label.style.marginLeft = "calc(" + (a * 20 + 1.5) + "% )";
+      label.style.width = "17%";
+      track.appendChild(label);
+    } else {
+      var lo = Math.min(a, b), hi = Math.max(a, b);
+      label = el("div", "label", s.label);
+      label.style.marginLeft = (lo * 20 + 10) + "%";
+      label.style.width = ((hi - lo) * 20) + "%";
+      arrow = el("div", "arrow " + (b > a ? "ltr" : "rtl"));
+      arrow.style.marginLeft = (lo * 20 + 10) + "%";
+      arrow.style.width = ((hi - lo) * 20) + "%";
+      track.appendChild(label);
+      track.appendChild(arrow);
+    }
+    row.appendChild(track);
+    row.addEventListener("click", function () { state.sel = i; render(); });
+    rows.appendChild(row);
+  });
+}
+
+function renderDetail() {
+  var list = visible();
+  var s = list[state.sel];
+  $("dTitle").textContent = (state.sel + 1) + ". " + s.label;
+  $("dWhere").textContent = s.where;
+  $("dBody").textContent = s.body;
+  $("dData").textContent = s.data;
+  $("pos").textContent = "step " + (state.sel + 1) + " of " + list.length;
+  $("prev").disabled = state.sel === 0;
+  $("next").disabled = state.sel === list.length - 1;
+}
+
+function renderSummary() {
+  var p = PATHS[state.path];
+  $("pathDesc").textContent = p.desc;
+  $("statClaude").textContent = p.claude;
+  $("statVector").textContent = p.vector;
+  $("statSteps").textContent = visible().length;
+}
+
+function render() { renderPaths(); renderSummary(); renderRows(); renderDetail(); }
+
+function move(d) {
+  var n = state.sel + d;
+  if (n < 0 || n >= visible().length) return;
+  state.sel = n;
+  render();
+  var cur = document.querySelector('.row[aria-current="true"]');
+  if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" });
+}
+
+$("prev").addEventListener("click", function () { move(-1); });
+$("next").addEventListener("click", function () { move(1); });
+document.addEventListener("keydown", function (e) {
+  if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); move(1); }
+  if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); move(-1); }
+});
+
+render();
+</script>
