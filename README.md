@@ -46,9 +46,15 @@ chmod +x run.sh
 
 ### Manual Start
 
-```bash
+Windows (PowerShell):
+
+```powershell
+winget install Python.Python.3.13
+if (Test-Path .venv) { Remove-Item -Recurse -Force .venv }
+uv venv --python "$(py -3.13 -c 'import sys; print(sys.executable)')"
+uv sync
 cd backend
-uv run uvicorn app:app --reload --port 8000
+uv run python -m uvicorn app:app --reload --port 8000
 ```
 
 The application will be available at:
